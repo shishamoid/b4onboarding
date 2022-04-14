@@ -5,35 +5,21 @@ from torch.utils.data import DataLoader
 from torch.utils.data import TensorDataset
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 import math
-
-
-class RNN(nn.Module):
-    def __init__(self):
-        super(RNN, self).__init__()
-        self.rnn = nn.RNN(2, 64, batch_first=True)
-        self.fc = nn.Linear(64, 2)
-
-    def forward(self, x):
-        x = x.unsqueeze(1)
-        x = x.to(torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
-        x_rnn, hidden = self.rnn(x, None)
-        x = self.fc(x_rnn[:, -1, :])
-        return x
+import os
 
 
 def dataload():
-    r = 2  # 半径
+    t = np.linspace(0, 2*(math.pi))
+    x_list = []
+    y_list = []
 
-    θ = np.linspace(0, 2*math.pi, num=50)
+    for i in range(len(t)):
+        x_list.append(math.sin(t[i]+(1/2)*(math.pi)))
+        y_list.append(math.sin(2*t[i]))
 
-    correct_x = []
-    correct_y = []
-
-    for i in range(len(θ)):
-        correct_x.append(r*math.cos(θ[i]))
-        correct_y.append(r*math.sin(θ[i]))
+    correct_x = x_list
+    correct_y = y_list
 
     input_data = []
     correct_data = []
@@ -43,23 +29,37 @@ def dataload():
             input_data.append([correct_x[i], correct_y[i]])
             correct_data.append([correct_x[0], correct_y[0]])
         else:
-
             input_data.append([correct_x[i], correct_y[i]])
             correct_data.append([correct_x[i+1], correct_y[i+1]])
 
     input_data = torch.FloatTensor(input_data)
     correct_data = torch.FloatTensor(correct_data)
+
     dataset = TensorDataset(input_data, correct_data)
     train_loader = DataLoader(dataset, batch_size=8, shuffle=False)
-
     return input_data, train_loader
 
 
-def train(train_loader, device, num_epoch):
-    epoch_list = []
-    loss_list = []
+class RNN(nn.Module):
+    def __init__(self, device):
+        super(RNN, self).__init__()
+        self.device = device
+        self.rnn = nn.RNN(2, 64, batch_first=True)
+        self.fc = nn.Linear(64, 2)
 
-    model = RNN().to(device)
+    def forward(self, x):
+        x = x.unsqueeze(1)
+        x = x.to(self.device)
+        x_rnn, hidden = self.rnn(x, None)
+        x = self.fc(x_rnn[:, -1, :])
+        return x
+
+
+def train(train_loader, device, num_epoch):
+    loss_list = []
+    epoch_list = []
+
+    model = RNN(device).to(device)
 
     criterion = nn.MSELoss()
     optimizer = optim.SGD(model.parameters(), lr=0.1)
@@ -79,20 +79,20 @@ def train(train_loader, device, num_epoch):
             optimizer.step()
         loss_train /= j+1
 
-        epoch_list.append(i)
         loss_list.append(loss_train)
+        epoch_list.append(i)
 
-        if i % 10 == 0:
+        if i % 10 == 0 and i != 0:
             print("Epoch:", i, "Loss_Train:", loss_train)
 
-        if i % 50 == 0:
+        if i % 100 == 0:
             torch.save(model.to('cpu').state_dict(),
                        './rnn_models/epoch_{}_model.pth'.format(i))
 
     torch.save(model.to('cpu').state_dict(),
                './rnn_models/last_epoch_{}_model.pth'.format(num_epoch))
 
-    return model, epoch_list, loss_list
+    return model, loss_list, epoch_list
 
 
 def predict(model, pre):
@@ -107,22 +107,24 @@ def predict(model, pre):
         result_x.append(result[0][0])
         result_y.append(result[0][1])
 
+    fig = plt.figure()
     plt.plot(result_x, result_y, linestyle="None", linewidth=0, marker='o')
-    plt.show()
+    fig.savefig("./rnn_pictures/rnn_Lissajous.png")
 
 
 def main():
-    os.makedirs("./rnn_pictures", exist_ok=True)
     os.makedirs("./rnn_models", exist_ok=True)
+    os.makedirs("./rnn_pictures", exist_ok=True)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    num_epoch = 600
+
     input_data, train_data = dataload()
-    model, epoch_list, loss_list = train(train_data, device, 200)
+    model, loss_list, epoch_list = train(train_data, device, num_epoch)
     predict(model, input_data)
 
     fig = plt.figure()
     plt.plot(epoch_list, loss_list)
-    plt.axes().set_aspect('equal', 'datalim')
     fig.savefig("./rnn_pictures/loss_RNN.png")
 
 

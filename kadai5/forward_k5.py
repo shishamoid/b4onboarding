@@ -5,66 +5,70 @@ from torch.utils.data import DataLoader
 from torch.utils.data import TensorDataset
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 import math
-
-
-class RNN(nn.Module):
-    def __init__(self):
-        super(RNN, self).__init__()
-        self.rnn = nn.RNN(2, 64, batch_first=True)
-        self.fc = nn.Linear(64, 2)
-
-    def forward(self, x):
-        x = x.unsqueeze(1)
-        x = x.to(torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
-        x_rnn, hidden = self.rnn(x, None)
-        x = self.fc(x_rnn[:, -1, :])
-        return x
+import os
 
 
 def dataload():
-    r = 2  # 半径
 
-    θ = np.linspace(0, 2*math.pi, num=50)
+    t = np.linspace(0, 2*(math.pi))
 
-    correct_x = []
-    correct_y = []
+    x_list = []
+    y_list = []
 
-    for i in range(len(θ)):
-        correct_x.append(r*math.cos(θ[i]))
-        correct_y.append(r*math.sin(θ[i]))
+    for i in range(len(t)):
+        x_list.append(math.sin(t[i]+(1/2)*(math.pi)))
+        y_list.append(math.sin(2*t[i]))
+
+    correct_x = x_list
+    correct_y = y_list
 
     input_data = []
     correct_data = []
-
     for i in range(len(correct_x)):
         if i == 49:
             input_data.append([correct_x[i], correct_y[i]])
             correct_data.append([correct_x[0], correct_y[0]])
         else:
-
             input_data.append([correct_x[i], correct_y[i]])
             correct_data.append([correct_x[i+1], correct_y[i+1]])
 
     input_data = torch.FloatTensor(input_data)
     correct_data = torch.FloatTensor(correct_data)
+
     dataset = TensorDataset(input_data, correct_data)
     train_loader = DataLoader(dataset, batch_size=8, shuffle=False)
-
     return input_data, train_loader
 
 
-def train(train_loader, device, num_epoch):
-    epoch_list = []
-    loss_list = []
+class feedforward(nn.Module):
+    def __init__(self):
+        super(feedforward, self).__init__()
+        self.l1 = nn.Linear(2, 64)
+        self.a1 = nn.ReLU()
+        self.l2 = nn.Linear(64, 64)
+        self.a2 = nn.ReLU()
+        self.l3 = nn.Linear(64, 2)
+        self.a4 = nn.ReLU()
 
-    model = RNN().to(device)
+    def forward(self, x):
+
+        x = self.l1(x)
+        h = self.a1(x)
+        h = self.a1(self.l2(h))
+        y = self.l3(h)
+        return y
+
+
+def train(train_loader, device, num_epoc):
+    model = feedforward().to(device)
+    loss_list = []
+    epoch_list = []
 
     criterion = nn.MSELoss()
     optimizer = optim.SGD(model.parameters(), lr=0.1)
 
-    for i in range(num_epoch):
+    for i in range(num_epoc):
         model.train()
         loss_train = 0
         for j, xy in enumerate(train_loader):
@@ -78,26 +82,24 @@ def train(train_loader, device, num_epoch):
             loss.backward()
             optimizer.step()
         loss_train /= j+1
-
-        epoch_list.append(i)
         loss_list.append(loss_train)
-
+        epoch_list.append(i)
         if i % 10 == 0:
             print("Epoch:", i, "Loss_Train:", loss_train)
 
-        if i % 50 == 0:
+        if i % 100 == 0:
             torch.save(model.to('cpu').state_dict(),
-                       './rnn_models/epoch_{}_model.pth'.format(i))
-
+                       './forward_models/epoch_{}_model.pth'.format(i))
     torch.save(model.to('cpu').state_dict(),
-               './rnn_models/last_epoch_{}_model.pth'.format(num_epoch))
+               './forward_models/last_epoch_{}_model.pth'.format(num_epoc))
 
-    return model, epoch_list, loss_list
+    return model, loss_list, epoch_list
 
 
-def predict(model, pre):
-
+def draw_picture(model, pre):
     pre = pre.cpu()
+    model = model.cpu()
+
     result_x = []
     result_y = []
 
@@ -107,23 +109,23 @@ def predict(model, pre):
         result_x.append(result[0][0])
         result_y.append(result[0][1])
 
+    fig = plt.figure()
     plt.plot(result_x, result_y, linestyle="None", linewidth=0, marker='o')
-    plt.show()
+    fig.savefig("./forward_pictures/forward_Lissajous.png")
 
 
 def main():
-    os.makedirs("./rnn_pictures", exist_ok=True)
-    os.makedirs("./rnn_models", exist_ok=True)
+    os.makedirs("./forward_models", exist_ok=True)
+    os.makedirs("./forward_pictures", exist_ok=True)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    input_data, train_data = dataload()
-    model, epoch_list, loss_list = train(train_data, device, 200)
-    predict(model, input_data)
+    input_data, traindata = dataload()
+    model, loss_list, epoch_list = train(traindata, device, 600)
+    draw_picture(model, input_data)
 
     fig = plt.figure()
     plt.plot(epoch_list, loss_list)
-    plt.axes().set_aspect('equal', 'datalim')
-    fig.savefig("./rnn_pictures/loss_RNN.png")
+    fig.savefig("./forward_pictures/loss_forward.png")
 
 
 if __name__ == '__main__':
