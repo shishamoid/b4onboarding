@@ -88,6 +88,7 @@ def train(train_loader, device, num_epoch):
         if i % 100 == 0:
             torch.save(model.to('cpu').state_dict(),
                        './rnn_models/epoch_{}_model.pth'.format(i))
+            model.to(device)
 
     torch.save(model.to('cpu').state_dict(),
                './rnn_models/last_epoch_{}_model.pth'.format(num_epoch))
@@ -95,17 +96,28 @@ def train(train_loader, device, num_epoch):
     return model, loss_list, epoch_list
 
 
-def predict(model, pre):
-
-    pre = pre.cpu()
+def draw_picture(model, pre):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    pre = pre.to(device)
     result_x = []
     result_y = []
 
-    for i in range(50):
-        result = model(pre.unsqueeze(1)[i])
-        result = result.cpu()
+    model = model.to(device)
+
+    result = model(pre.unsqueeze(1)[0])#最初だけモデルに入力
+    #result = result.cpu()
+    result_x.append(result[0][0])
+    result_y.append(result[0][1])
+
+    count = 0
+    while True:
+        result = model(result.unsqueeze(1)[0])#クローズドループに変更
+        #result = result.cpu()
         result_x.append(result[0][0])
         result_y.append(result[0][1])
+        count +=1
+        if count==50:
+            break
 
     fig = plt.figure()
     plt.plot(result_x, result_y, linestyle="None", linewidth=0, marker='o')
@@ -121,7 +133,7 @@ def main():
 
     input_data, train_data = dataload()
     model, loss_list, epoch_list = train(train_data, device, num_epoch)
-    predict(model, input_data)
+    draw_picture(model, input_data)
 
     fig = plt.figure()
     plt.plot(epoch_list, loss_list)
