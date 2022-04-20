@@ -58,11 +58,11 @@ def dataload():
 def train(train_loader, device, num_epoch):
     epoch_list = []
     loss_list = []
-
+    #train_loader.to(device)
     model = RNN().to(device)
 
     criterion = nn.MSELoss()
-    optimizer = optim.SGD(model.parameters(), lr=0.1)
+    optimizer = optim.SGD(model.parameters(), lr=0.01)
 
     for i in range(num_epoch):
         model.train()
@@ -71,7 +71,8 @@ def train(train_loader, device, num_epoch):
 
             xy[0] = xy[0].to(device)
             xy[1] = xy[1].to(device)
-
+            #print(next(model.parameters()).is_cuda)
+            #print(xy[1].device)
             loss = criterion(model(xy[0]), xy[1])
             loss_train += loss.item()
             optimizer.zero_grad()
@@ -89,6 +90,8 @@ def train(train_loader, device, num_epoch):
             torch.save(model.to('cpu').state_dict(),
                        './rnn_models/epoch_{}_model.pth'.format(i))
 
+            model.to(device)
+
     torch.save(model.to('cpu').state_dict(),
                './rnn_models/last_epoch_{}_model.pth'.format(num_epoch))
 
@@ -97,18 +100,39 @@ def train(train_loader, device, num_epoch):
 
 def predict(model, pre):
 
-    pre = pre.cpu()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    pre.to(device)
     result_x = []
     result_y = []
 
-    for i in range(50):
-        result = model(pre.unsqueeze(1)[i])
+    model = model.to(device)
+
+    result = model(pre.unsqueeze(1)[0])#最初だけモデルに入力
+    result = result.cpu()
+    result_x.append(result[0][0])
+    result_y.append(result[0][1])
+    count = 0
+    while True:
+        result = model(result.unsqueeze(1)[0])#クローズドループに変更
         result = result.cpu()
         result_x.append(result[0][0])
         result_y.append(result[0][1])
+        count +=1
+        if count==50:
+            break
 
+    #円プロット用
+    circle_x=[]
+    circle_y=[]
+    for i in range(50):
+        circle_x.append(pre[i][0])
+        circle_y.append(pre[i][1])
+
+    fig = plt.figure()
     plt.plot(result_x, result_y, linestyle="None", linewidth=0, marker='o')
-    plt.show()
+    plt.plot(circle_x, circle_y,)
+    plt.axes().set_aspect('equal', 'datalim')
+    fig.savefig("./rnn_pictures/circle_RNN.png")
 
 
 def main():
@@ -117,12 +141,12 @@ def main():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     input_data, train_data = dataload()
-    model, epoch_list, loss_list = train(train_data, device, 200)
+    model, epoch_list, loss_list = train(train_data, device, 300)
     predict(model, input_data)
 
     fig = plt.figure()
     plt.plot(epoch_list, loss_list)
-    plt.axes().set_aspect('equal', 'datalim')
+    #plt.axes().set_aspect('equal', 'datalim')
     fig.savefig("./rnn_pictures/loss_RNN.png")
 
 

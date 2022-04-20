@@ -94,6 +94,7 @@ def train(train_loader, device, num_epoch):
             print("save", i)
             torch.save(model.to('cpu').state_dict(),
                        './forward_models/epoch_{}_model.pth'.format(i))
+            model.to(device)
 
     torch.save(model.to('cpu').state_dict(),
                './forward_models/last_epoch_{}_model.pth'.format(num_epoch))
@@ -101,23 +102,41 @@ def train(train_loader, device, num_epoch):
 
 
 def draw_circle(model, pre):
-    pre = pre.cpu()
-    model = model.cpu()
 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    pre = pre.to(device)
     result_x = []
     result_y = []
 
-    for i in range(50):
-        result = model(pre.unsqueeze(1)[i])
-        result = result.cpu()
+    model = model.to(device)
+
+    result = model(pre.unsqueeze(1)[0])#最初だけモデルに入力
+    #result = result.cpu()
+    result_x.append(result[0][0])
+    result_y.append(result[0][1])
+
+    count = 0
+    while True:
+        result = model(result.unsqueeze(1)[0])#クローズドループに変更
+        #result = result.cpu()
         result_x.append(result[0][0])
         result_y.append(result[0][1])
+        count +=1
+        if count==50:
+            break
+
+    #円プロット用
+    circle_x=[]
+    circle_y=[]
+    for i in range(50):
+        circle_x.append(pre[i][0])
+        circle_y.append(pre[i][1])
 
     fig = plt.figure()
     plt.plot(result_x, result_y, linestyle="None", linewidth=0, marker='o')
+    plt.plot(circle_x, circle_y)
     plt.axes().set_aspect('equal', 'datalim')
     fig.savefig("./forward_pictures/forward_circle.png")
-
 
 def main():
     os.makedirs("./forward_pictures", exist_ok=True)
@@ -130,7 +149,7 @@ def main():
 
     fig = plt.figure()
     plt.plot(epoch_list, loss_list)
-    plt.axes().set_aspect('equal', 'datalim')
+    #plt.axes().set_aspect('equal', 'datalim')
     fig.savefig("./forward_pictures/loss_forward.png")
 
 
