@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import math
-
+import copy
 
 class RNN(nn.Module):
     def __init__(self):
@@ -16,12 +16,11 @@ class RNN(nn.Module):
         self.fc = nn.Linear(64, 2)
 
     def forward(self, x):
-        x = x.unsqueeze(1)
+        #x = x.unsqueeze(1)
         x = x.to(torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
         x_rnn, hidden = self.rnn(x, None)
-        x = self.fc(x_rnn[:, -1, :])
+        x = self.fc(x_rnn)
         return x
-
 
 def dataload():
     r = 2  # 半径
@@ -35,22 +34,30 @@ def dataload():
         correct_x.append(r*math.cos(θ[i]))
         correct_y.append(r*math.sin(θ[i]))
 
-    input_data = []
-    correct_data = []
+    input_onecircle_data = []
+    correct_onecircle_data = []
 
     for i in range(len(correct_x)):
         if i == 49:
-            input_data.append([correct_x[i], correct_y[i]])
-            correct_data.append([correct_x[0], correct_y[0]])
+            input_onecircle_data.append([correct_x[i], correct_y[i]])
+            correct_onecircle_data.append([correct_x[0], correct_y[0]])
         else:
 
-            input_data.append([correct_x[i], correct_y[i]])
-            correct_data.append([correct_x[i+1], correct_y[i+1]])
+            input_onecircle_data.append([correct_x[i], correct_y[i]])
+            correct_onecircle_data.append([correct_x[i+1], correct_y[i+1]])
+
+    input_data = []
+    correct_data = []
+
+    for i in range(50):
+        input_data.append(copy.deepcopy(input_onecircle_data))
+        correct_data.append(copy.deepcopy(correct_onecircle_data))
 
     input_data = torch.FloatTensor(input_data)
     correct_data = torch.FloatTensor(correct_data)
+
     dataset = TensorDataset(input_data, correct_data)
-    train_loader = DataLoader(dataset, batch_size=8, shuffle=False)
+    train_loader = DataLoader(dataset, batch_size=5, shuffle=False)
 
     return input_data, train_loader
 
@@ -62,18 +69,17 @@ def train(train_loader, device, num_epoch):
     model = RNN().to(device)
 
     criterion = nn.MSELoss()
-    optimizer = optim.SGD(model.parameters(), lr=0.01)
+    optimizer = optim.SGD(model.parameters(), lr=0.001)
 
     for i in range(num_epoch):
         model.train()
         loss_train = 0
         for j, xy in enumerate(train_loader):
 
-            xy[0] = xy[0].to(device)
-            xy[1] = xy[1].to(device)
-            #print(next(model.parameters()).is_cuda)
-            #print(xy[1].device)
-            loss = criterion(model(xy[0]), xy[1])
+            xy_coo_input = xy[0].to(device)
+            xy_coo_correct = xy[1].to(device)
+
+            loss = criterion(model(xy_coo_input), xy_coo_correct)
             loss_train += loss.item()
             optimizer.zero_grad()
             loss.backward()
@@ -89,7 +95,6 @@ def train(train_loader, device, num_epoch):
         if i % 50 == 0:
             torch.save(model.to('cpu').state_dict(),
                        './rnn_models/epoch_{}_model.pth'.format(i))
-
             model.to(device)
 
     torch.save(model.to('cpu').state_dict(),
@@ -106,17 +111,23 @@ def predict(model, pre):
     result_y = []
 
     model = model.to(device)
+    #print(pre[0][0].unsqueeze(0).unsqueeze(0))
+    result = model(pre[0][0].unsqueeze(0).unsqueeze(0))#最初だけモデルに入力
+    #print(result[0][0])
+    result_x.append(result[0][0][0])
+    result_y.append(result[0][0][1])
+    result = result.to(device)
 
-    result = model(pre.unsqueeze(1)[0])#最初だけモデルに入力
-    result = result.cpu()
-    result_x.append(result[0][0])
-    result_y.append(result[0][1])
     count = 0
     while True:
-        result = model(result.unsqueeze(1)[0])#クローズドループに変更
-        result = result.cpu()
-        result_x.append(result[0][0])
-        result_y.append(result[0][1])
+        model = model.to(cpu)
+        result = result.to(device)
+
+        result = model(result)#クローズドループに変更
+
+        #result = result.cpu()
+        result_x.append(result[0][0][0])
+        result_y.append(result[0][0][1])
         count +=1
         if count==50:
             break
@@ -125,15 +136,15 @@ def predict(model, pre):
     circle_x=[]
     circle_y=[]
     for i in range(50):
-        circle_x.append(pre[i][0])
-        circle_y.append(pre[i][1])
+        circle_x.append(pre[0][i][0])
+        circle_y.append(pre[0][i][1])
 
     fig = plt.figure()
+
     plt.plot(result_x, result_y, linestyle="None", linewidth=0, marker='o')
-    plt.plot(circle_x, circle_y,)
+    plt.plot(circle_x, circle_y)
     plt.axes().set_aspect('equal', 'datalim')
     fig.savefig("./rnn_pictures/circle_RNN.png")
-
 
 def main():
     os.makedirs("./rnn_pictures", exist_ok=True)
@@ -141,7 +152,8 @@ def main():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     input_data, train_data = dataload()
-    model, epoch_list, loss_list = train(train_data, device, 300)
+    model, epoch_list, loss_list = train(train_data, device, 30)
+    #print(input_data[0][0][0])
     predict(model, input_data)
 
     fig = plt.figure()
